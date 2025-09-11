@@ -1,0 +1,109 @@
+name: 'E2E and Backup Branch Cleanup'
+description: 'Deletes branches matching issue-<number> pattern and old backup branches'
+inputs:
+  github-token:
+    description: 'GitHub token with repo access'
+    required: true
+    default: ${{ github.token }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Delete branches matching issue-<number> pattern
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          console.log(`Cleaning up branches in: ${context.repo.owner}/${context.repo.repo}`);
+          
+          // Get branches from current repository (first 100)
+          const branches = await github.rest.repos.listBranches({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            per_page: 100
+          });
+
+          // Filter branches that match the issue-<number> pattern
+          const issueBranches = branches.data.filter(branch => {
+            return /^issue-\d+$/.test(branch.name);
+          });
+
+          console.log(`Found ${issueBranches.length} issue-<number> branches out of ${branches.data.length} total branches retrieved`);
+
+          // Delete each matching branch
+          for (const branch of issueBranches) {
+            try {
+              console.log(`Deleting branch: ${branch.name}`);
+              await github.rest.git.deleteRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `heads/${branch.name}`
+              });
+              console.log(`✅ Successfully deleted branch: ${branch.name}`);
+            } catch (error) {
+              console.error(`❌ Failed to delete branch ${branch.name}: ${error.message}`);
+            }
+          }
+
+          console.log(`Issue branch deletion completed. Deleted ${issueBranches.length} issue branches.`);
+
+      - name: Delete old backup branches (older than 1 month)
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ inputs.github-token }}
+          script: |
+            // Get branches (first 100)
+            const branches = await github.rest.repos.listBranches({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100
+            });
+
+            // Filter branches that match the pattern backup-YYYY-MM-DD-HH-MM
+            const backupBranches = branches.data.filter(branch => {
+              return /^backup-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}$/.test(branch.name);
+            });
+
+            console.log(`Found ${backupBranches.length} branches matching pattern backup-YYYY-MM-DD-HH-MM`);
+
+            // Calculate cutoff date (1 month ago)
+            const oneMonthAgo = new Date();
+            oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+            
+            let deletedCount = 0;
+            const defaultBranch = context.payload.repository.default_branch;
+            
+            // Check each backup branch and delete if older than 1 month
+            for (const branch of backupBranches) {
+              try {
+                // skip if branch is default (extra safety net)
+                if (branch.name === defaultBranch) {
+                  console.log(`⚠️ Skipping deletion of default branch: ${branch.name}`);
+                  continue;
+                }
+
+                // Extract date from branch name: backup-2025-08-01-07-01
+                const dateMatch = branch.name.match(/^backup-(\d{4})-(\d{2})-(\d{2})-(\d{2})-(\d{2})$/);
+                if (dateMatch) {
+                  const [_, year, month, day, hour, minute] = dateMatch;
+                  const branchDate = new Date(year, month - 1, day, hour, minute); // month is 0-indexed
+                  
+                  if (branchDate < oneMonthAgo) {
+                    console.log(`Deleting old backup branch: ${branch.name} (created: ${branchDate.toISOString()})`);
+                    await github.rest.git.deleteRef({
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      ref: `heads/${branch.name}`
+                    });
+                    console.log(`✅ Successfully deleted backup branch: ${branch.name}`);
+                    deletedCount++;
+                  } else {
+                    console.log(`Keeping backup branch: ${branch.name} (created: ${branchDate.toISOString()}) - not old enough`);
+                  }
+                }
+              } catch (error) {
+                console.error(`❌ Failed to delete backup branch ${branch.name}: ${error.message}`);
+              }
+            }
+
+            console.log(`Backup branch cleanup completed. Deleted ${deletedCount} out of ${backupBranches.length} backup branches`);
