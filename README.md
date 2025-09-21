@@ -2,6 +2,12 @@
 
 Centralized GitHub Actions for STA E2E repositories. This repository contains reusable composite actions that can be used across multiple repositories in the organization.
 
+### E2E Repos
+
+Find STA E2E repos in AEMDEMOS: https://github.com/search?q=org%3Aaemdemos+sta+e2e&type=repositories
+
+_**NOTE**_ - other STA E2E tests have been created in other orgs as well 🤷.
+
 ## Available Actions
 
 ### 🧹 E2E Issue Branch Cleanup
@@ -22,6 +28,9 @@ on:
   schedule:
     - cron: '0 23 * * *'  # Every night at 11 PM UTC
   workflow_dispatch:      # Allow manual trigger
+
+permissions:
+  contents: write   # 👈 this is required to delete branches
 
 jobs:
   cleanup:
