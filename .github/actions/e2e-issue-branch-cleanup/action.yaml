@@ -97,8 +97,6 @@ runs:
                   });
                   console.log(`✅ Successfully deleted backup branch: ${branch.name}`);
                   deletedCount++;
-                } else {
-                  console.log(`Keeping backup branch: ${branch.name} (created: ${branchDate.toISOString()}) - not old enough`);
                 }
               }
             } catch (error) {
